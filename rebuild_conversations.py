@@ -265,9 +265,15 @@ def infer_workspace_from_brain(conversation_id):
                     raw = raw.replace("%3A", ":").replace("%3a", ":")
                     raw = raw.replace("%20", " ")
                     parts = raw.replace("\\", "/").split("/")
-                    # Use the first 3–4 segments as workspace root
-                    if len(parts) >= 3:
-                        ws = "/".join(parts[:4]) if len(parts) >= 4 else "/".join(parts[:3])
+                    # On Windows paths like C:/Users/name/Desktop/Project,
+                    # we need 5 segments to reach the actual project folder.
+                    # On Linux/Mac like /home/name/projects/Project, 4 is enough.
+                    if _SYSTEM == "Windows":
+                        depth = 5
+                    else:
+                        depth = 4
+                    if len(parts) >= depth:
+                        ws = "/".join(parts[:depth])
                         path_counts[ws] = path_counts.get(ws, 0) + 1
             except Exception:
                 pass
@@ -539,8 +545,10 @@ def build_trajectory_entry(conversation_id, title, existing_inner_data=None,
     if existing_inner_data:
         preserved_fields = strip_field_from_protobuf(existing_inner_data, 1)
         inner_info = encode_string_field(1, title) + preserved_fields
-        # Inject workspace if missing and user assigned one
-        if workspace_path and not extract_workspace_hint(existing_inner_data):
+        # Override workspace if user assigned a new one
+        if workspace_path:
+            # Strip old workspace (field 9) and inject the new one
+            inner_info = strip_field_from_protobuf(inner_info, 9)
             inner_info += build_workspace_field(workspace_path)
         # Inject timestamps if missing
         if pb_mtime and not has_timestamp_fields(existing_inner_data):
@@ -676,7 +684,7 @@ def main():
     print(f"  Totals: {stats['brain']} brain, {stats['preserved']} preserved, {stats['fallback']} fallback")
     print()
 
-    # ── Auto-infer workspaces from brain artifacts ──────────────────────────
+    # ── Workspace assignment ───────────────────────────────────────────────
 
     unmapped = [(i, cid, title)
                 for i, (cid, title, _, inner_data, has_ws) in enumerate(resolved, 1)
@@ -684,30 +692,42 @@ def main():
 
     ws_assignments = {}  # cid -> folder_path
 
-    if unmapped and os.path.isdir(BRAIN_DIR):
-        print("  Auto-inferring workspaces from brain artifacts...")
-        auto_count = 0
-        for idx, cid, title in unmapped:
-            inferred = infer_workspace_from_brain(cid)
-            if inferred and os.path.isdir(inferred):
-                ws_assignments[cid] = inferred
-                auto_count += 1
-                print(f"    [{idx:3d}] -> {os.path.basename(inferred)}")
-        if auto_count:
-            print(f"  Auto-inferred {auto_count} workspace(s)")
-        else:
-            print("  No workspaces could be auto-inferred.")
+    if unmapped:
+        print(f"  {len(unmapped)} conversation(s) have no workspace assigned.")
         print()
+        print("  Press Enter or 1: Auto-assign workspaces (recommended)")
+        print("  Press 2:          Auto-assign + manually assign the rest")
+        print()
+        choice = input("  Your choice: ").strip()
 
-    # ── Interactive workspace assignment for remaining ──────────────────────
+        # Auto-infer from brain artifacts (both options do this)
+        if os.path.isdir(BRAIN_DIR):
+            print()
+            print("  Auto-assigning workspaces from brain artifacts...")
+            auto_count = 0
+            for idx, cid, title in unmapped:
+                inferred = infer_workspace_from_brain(cid)
+                if inferred and os.path.isdir(inferred):
+                    ws_assignments[cid] = inferred
+                    auto_count += 1
+                    print(f"    [{idx:3d}] -> {os.path.basename(inferred)}")
+            if auto_count:
+                print(f"  Auto-assigned {auto_count} workspace(s)")
+            else:
+                print("  No workspaces could be auto-detected.")
+            print()
 
-    still_unmapped = [(idx, cid, title)
-                      for idx, cid, title in unmapped
-                      if cid not in ws_assignments]
-
-    if still_unmapped:
-        user_assignments = interactive_workspace_assignment(still_unmapped)
-        ws_assignments.update(user_assignments)
+        # Option 2: also do manual assignment for the rest
+        if choice == '2':
+            still_unmapped = [(idx, cid, title)
+                              for idx, cid, title in unmapped
+                              if cid not in ws_assignments]
+            if still_unmapped:
+                user_assignments = interactive_workspace_assignment(still_unmapped)
+                ws_assignments.update(user_assignments)
+            else:
+                print("  All conversations were auto-assigned — nothing left to assign manually.")
+                print()
 
     # ── Build the new index ─────────────────────────────────────────────────
 
