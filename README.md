@@ -92,6 +92,8 @@ Requires Python 3.7+ with no external packages. The script automatically detects
 - **Metadata-preserving** — workspace assignments, timestamps, and other internal state are retained *(v1.01+)*
 - **Idempotent** — safe to run multiple times
 
+⚠️ Antivirus false positive: The .exe may be flagged by 4 out of 72 engines on VirusTotal — all low-tier (Jiangmin, Bkav, etc.). This is a known PyInstaller false positive: the bundler extracts Python to a temp folder at runtime, which triggers generic heuristic rules. All major engines (Windows Defender, Kaspersky, ESET, Bitdefender, Norton, etc.) pass it as clean. The source code is fully open — review it yourself if in doubt.
+
 ## FAQ
 
 **Q: Do I really need to restart my PC?**
