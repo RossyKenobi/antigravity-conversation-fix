@@ -630,17 +630,19 @@ def get_title_from_brain(conversation_id):
 def resolve_title(conversation_id, existing_titles):
     """
     Determine the best title for a conversation. Priority:
-      1. Brain artifact .md heading
-      2. Existing title from database (preserved from previous run)
+      1. Existing title from database (canonical Antigravity title)
+      2. Brain artifact .md heading (fallback for new/missing conversations)
       3. Fallback: date + short UUID
-    Returns (title, source) where source is 'brain', 'preserved', or 'fallback'.
+    Returns (title, source) where source is 'preserved', 'brain', or 'fallback'.
     """
+    # Prefer the canonical title Antigravity already has in the database
+    if conversation_id in existing_titles:
+        return existing_titles[conversation_id], "preserved"
+
+    # Fall back to brain artifact heading for conversations not yet indexed
     brain_title = get_title_from_brain(conversation_id)
     if brain_title:
         return brain_title, "brain"
-
-    if conversation_id in existing_titles:
-        return existing_titles[conversation_id], "preserved"
 
     conv_file = os.path.join(CONVERSATIONS_DIR, f"{conversation_id}.pb")
     if os.path.exists(conv_file):
